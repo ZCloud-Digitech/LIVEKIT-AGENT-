@@ -1,0 +1,522 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// PLATFORM & ADMIN
+// -------------------------------------------------------------
+model PlatformUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("ADMIN") // SUPER_ADMIN, ADMIN, SUPPORT
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("platform_users")
+}
+
+model PlatformSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// -------------------------------------------------------------
+// TENANTS & MEMBERSHIP
+// -------------------------------------------------------------
+model Tenant {
+  id          String   @id @default(cuid())
+  name        String
+  legalName   String?
+  industry    String?
+  website     String?
+  email       String?
+  phone       String?
+  country     String?  @default("US")
+  timezone    String   @default("America/New_York")
+  address     String?
+  city        String?
+  state       String?
+  postalCode  String?
+  description String?
+  status      String   @default("ACTIVE") // TRIAL, ACTIVE, SUSPENDED, CANCELLED, ARCHIVED
+  planId      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  settings      TenantSetting?
+  members       TenantMember[]
+  invitations   Invitation[]
+  agents        Agent[]
+  calls         Call[]
+  customers     Customer[]
+  appointments  Appointment[]
+  phoneNumbers  PhoneNumber[]
+  knowledgeDocs KnowledgeDocument[]
+  integrations  Integration[]
+  webhooks      Webhook[]
+  usageRecords  UsageRecord[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  subscriptions TenantSubscription[]
+
+  @@map("tenants")
+}
+
+model TenantSetting {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  retentionDays       Int      @default(90)
+  defaultCallerId     String?
+  recordCalls         Boolean  @default(true)
+  autoTranscribe      Boolean  @default(true)
+  aiSummaryEnabled    Boolean  @default(true)
+  notificationEmail   String?
+  allowedDomains      String?
+  webhookSignatureKey String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_settings")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  status       String   @default("ACTIVE") // ACTIVE, INVITED, SUSPENDED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships TenantMember[]
+
+  @@map("users")
+}
+
+model TenantMember {
+  id        String   @id @default(cuid())
+  tenantId  String
+  userId    String
+  role      String   @default("MEMBER") // OWNER, ADMIN, MANAGER, STAFF, VIEWER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@map("tenant_members")
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  tenantId  String
+  email     String
+  role      String   @default("STAFF")
+  token     String   @unique
+  status    String   @default("PENDING") // PENDING, ACCEPTED, EXPIRED, CANCELLED
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@map("invitations")
+}
+
+// -------------------------------------------------------------
+// PLANS & BILLING
+// -------------------------------------------------------------
+model Plan {
+  id                     String   @id @default(cuid())
+  code                   String   @unique // FREE, STARTER, PRO, BUSINESS, ENTERPRISE
+  name                   String
+  description            String?
+  priceMonthly           Float    @default(0)
+  billingCycle           String   @default("monthly")
+  maxAgents              Int      @default(1)
+  monthlyMinutes         Int      @default(100)
+  maxUsers               Int      @default(2)
+  maxPhoneNumbers        Int      @default(1)
+  maxConcurrentCalls     Int      @default(1)
+  knowledgeStorageMb     Int      @default(50)
+  integrationsAllowed    Int      @default(2)
+  recordingRetentionDays Int      @default(30)
+  featuresJson           String?  @default("{}")
+  createdAt              DateTime @default(now())
+
+  subscriptions TenantSubscription[]
+
+  @@map("plans")
+}
+
+model TenantSubscription {
+  id                 String    @id @default(cuid())
+  tenantId           String
+  planId             String
+  status             String    @default("ACTIVE") // ACTIVE, TRIALING, PAST_DUE, CANCELLED
+  currentPeriodStart DateTime  @default(now())
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean   @default(false)
+  stripeCustomerId   String?
+  stripeSubId        String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  @@index([tenantId, status])
+  @@map("tenant_subscriptions")
+}
+
+model UsageRecord {
+  id          String   @id @default(cuid())
+  tenantId    String
+  metricType  String   // VOICE_MINUTES, CALL_COUNT, STORAGE_BYTES, CONCURRENT_PEAK
+  quantity    Float
+  callId      String?
+  notes       String?
+  timestamp   DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, metricType, timestamp])
+  @@map("usage_records")
+}
+
+// -------------------------------------------------------------
+// VOICE AGENTS & VERSIONS
+// -------------------------------------------------------------
+model Agent {
+  id                   String   @id @default(cuid())
+  tenantId             String
+  name                 String
+  type                 String   @default("INBOUND") // INBOUND, OUTBOUND, BLENDED, APPOINTMENT_BOOKING, CUSTOMER_SUPPORT
+  status               String   @default("DRAFT") // DRAFT, CONFIGURING, TESTING, ACTIVE, PAUSED, ERROR, ARCHIVED
+  currentVersionId     String?
+  assignedPhoneNumberId String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions     AgentVersion[]
+  calls        Call[]
+  appointments Appointment[]
+
+  @@index([tenantId, status])
+  @@map("agents")
+}
+
+model AgentVersion {
+  id                  String    @id @default(cuid())
+  agentId             String
+  versionNumber       Int       @default(1)
+  changeSummary       String?
+  prompt              String?
+  systemInstructions  String?
+  greeting            String?
+  closingMessage      String?
+  personality         String?   @default("professional, empathetic, concise")
+  tone                String?   @default("warm")
+  voiceProvider       String    @default("Cartesia") // Cartesia, ElevenLabs, Deepgram, OpenAI
+  voiceId             String    @default("sonic-english")
+  voiceLanguage       String    @default("en-US")
+  voiceSpeed          Float     @default(1.0)
+  aiModel             String    @default("gpt-4o-mini") // gpt-4o, gpt-4o-mini, claude-3-5-haiku
+  temperature         Float     @default(0.7)
+  maxTokens           Int       @default(500)
+  silenceTimeoutMs    Int       @default(2000)
+  greetingTimeoutMs   Int       @default(4000)
+  maxDurationSeconds  Int       @default(600)
+  fallbackBehavior    String?   @default("transfer_to_human")
+  businessHoursJson   String?   @default("{}")
+  transferRulesJson   String?   @default("{}")
+  toolsConfigJson     String?   @default("{\"check_availability\":true,\"book_appointment\":true,\"transfer_call\":true}")
+  knowledgeConfigJson String?   @default("{}")
+  publishedBy         String?
+  publishedAt         DateTime?
+  isPublished         Boolean   @default(false)
+  createdAt           DateTime  @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, versionNumber])
+  @@index([agentId, isPublished])
+  @@map("agent_versions")
+}
+
+// -------------------------------------------------------------
+// CALLS & TRANSCRIPTS
+// -------------------------------------------------------------
+model Call {
+  id               String    @id @default(cuid())
+  tenantId         String
+  agentId          String?
+  agentVersionId   String?
+  callerNumber     String
+  callerName       String?
+  recipientNumber  String?
+  direction        String    @default("INBOUND") // INBOUND, OUTBOUND
+  status           String    @default("INITIATED") // INITIATED, RINGING, IN_PROGRESS, COMPLETED, FAILED, TRANSFERRED, MISSED
+  durationSeconds  Int       @default(0)
+  intent           String?
+  outcome          String?   // APPOINTMENT_BOOKED, RESOLVED, TRANSFERRED, DROPPED, VOICEMAIL
+  summary          String?
+  sentiment        String?   @default("NEUTRAL") // POSITIVE, NEUTRAL, NEGATIVE
+  recordingUrl     String?
+  transferredTo    String?
+  failureReason    String?
+  livekitRoomId    String?
+  startedAt        DateTime  @default(now())
+  endedAt          DateTime?
+  createdAt        DateTime  @default(now())
+
+  tenant       Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  agent        Agent?           @relation(fields: [agentId], references: [id])
+  transcripts  CallTranscript[]
+  events       CallEvent[]
+  appointments Appointment[]
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, status])
+  @@index([tenantId, agentId])
+  @@map("calls")
+}
+
+model CallTranscript {
+  id               String   @id @default(cuid())
+  callId           String
+  speaker          String   // AGENT, CUSTOMER, SYSTEM
+  message          String
+  toolInvocation   String?  // e.g. check_availability(date="2026-09-15")
+  toolResult       String?  // e.g. ["10:30 AM", "2:00 PM"]
+  latencyMs        Int?
+  timestampOffsetMs Int     @default(0)
+  createdAt        DateTime @default(now())
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId, timestampOffsetMs])
+  @@map("call_transcripts")
+}
+
+model CallEvent {
+  id        String   @id @default(cuid())
+  callId    String
+  eventType String   // SESSION_STARTED, SPEECH_STARTED, TOOL_CALLED, TRANSFERRED, CALL_ENDED
+  payload   String?  @default("{}")
+  createdAt DateTime @default(now())
+
+  call Call @relation(fields: [callId], references: [id], onDelete: Cascade)
+
+  @@index([callId, createdAt])
+  @@map("call_events")
+}
+
+// -------------------------------------------------------------
+// CUSTOMERS (CRM)
+// -------------------------------------------------------------
+model Customer {
+  id              String    @id @default(cuid())
+  tenantId        String
+  name            String
+  phone           String
+  email           String?
+  company         String?
+  tags            String?   @default("[]")
+  notes           String?
+  totalCalls      Int       @default(0)
+  totalSpent      Float     @default(0)
+  lastContactedAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, phone])
+  @@index([tenantId, name])
+  @@map("customers")
+}
+
+// -------------------------------------------------------------
+// APPOINTMENTS
+// -------------------------------------------------------------
+model Appointment {
+  id              String   @id @default(cuid())
+  tenantId        String
+  customerId      String?
+  agentId         String?
+  callId          String?
+  title           String
+  serviceName     String
+  date            String   // YYYY-MM-DD
+  time            String   // HH:mm
+  durationMinutes Int      @default(30)
+  status          String   @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED, RESCHEDULED
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
+  agent    Agent?    @relation(fields: [agentId], references: [id])
+  call     Call?     @relation(fields: [callId], references: [id])
+
+  @@index([tenantId, date])
+  @@map("appointments")
+}
+
+// -------------------------------------------------------------
+// PHONE NUMBERS
+// -------------------------------------------------------------
+model PhoneNumber {
+  id            String   @id @default(cuid())
+  tenantId      String
+  number        String   @unique
+  formatted     String
+  provider      String   @default("Twilio")
+  assignedAgentId String?
+  status        String   @default("ACTIVE") // ACTIVE, INACTIVE, RELEASED
+  incomingCount Int      @default(0)
+  outgoingCount Int      @default(0)
+  capabilities  String?  @default("voice,sms")
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("phone_numbers")
+}
+
+// -------------------------------------------------------------
+// KNOWLEDGE BASE
+// -------------------------------------------------------------
+model KnowledgeDocument {
+  id           String    @id @default(cuid())
+  tenantId     String
+  title        String
+  type         String    // PDF, DOCX, TXT, MARKDOWN, URL, FAQ
+  sizeBytes    Int       @default(0)
+  status       String    @default("READY") // UPLOADING, PROCESSING, INDEXING, READY, FAILED
+  content      String?
+  chunkCount   Int       @default(1)
+  lastIndexedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+  @@map("knowledge_documents")
+}
+
+// -------------------------------------------------------------
+// INTEGRATIONS & WEBHOOKS
+// -------------------------------------------------------------
+model Integration {
+  id                   String    @id @default(cuid())
+  tenantId             String
+  provider             String    // GOOGLE_CALENDAR, MS_CALENDAR, HUBSPOT, SALESFORCE, WEBHOOK, TWILIO
+  name                 String
+  status               String    @default("CONNECTED") // CONNECTED, DISCONNECTED, ERROR, SYNCING
+  credentialsEncrypted String?
+  configJson           String?   @default("{}")
+  lastSyncAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, provider])
+  @@map("integrations")
+}
+
+model Webhook {
+  id           String   @id @default(cuid())
+  tenantId     String
+  url          String
+  secret       String
+  description  String?
+  events       String   // e.g. "call.ended,appointment.created"
+  status       String   @default("ACTIVE") // ACTIVE, INACTIVE
+  failureCount Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId, status])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id             String   @id @default(cuid())
+  webhookId      String
+  eventType      String
+  payloadJson    String
+  responseStatus Int?
+  responseBody   String?
+  success        Boolean  @default(true)
+  attempts       Int      @default(1)
+  createdAt      DateTime @default(now())
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
+
+// -------------------------------------------------------------
+// AUDIT LOGS & NOTIFICATIONS
+// -------------------------------------------------------------
+model AuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String?  // null for platform-wide admin actions
+  actorId    String
+  actorEmail String
+  actorType  String   // PLATFORM_USER, TENANT_MEMBER
+  action     String   // TENANT_CREATED, AGENT_UPDATED, VERSION_PUBLISHED, IMPERSONATION_STARTED, etc.
+  resource   String   // tenant, agent, phone_number, plan, user
+  resourceId String?
+  ipAddress  String?  @default("127.0.0.1")
+  userAgent  String?
+  changes    String?  @default("{}")
+  createdAt  DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  tenantId  String
+  type      String   // USAGE_WARNING, AGENT_ERROR, INTEGRATION_DISCONNECTED, WEBHOOK_FAILURE, SYSTEM_ALERT
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, read])
+  @@map("notifications")
+}
