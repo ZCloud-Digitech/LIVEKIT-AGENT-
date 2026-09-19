@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { AgentDispatchClient } from 'livekit-server-sdk';
 import { checkEntitlement } from './entitlement.service';
 
 export interface LiveKitSessionRequest {
@@ -15,6 +16,7 @@ export interface LiveKitTokenResponse {
   wsUrl: string;
   roomName: string;
   sessionId: string;
+  dispatchId?: string;
   metadata: {
     tenantId: string;
     agentId: string;
@@ -26,9 +28,10 @@ export interface LiveKitTokenResponse {
 }
 
 /**
- * Server-side LiveKit Session & Token Generator
- * Enforces tenant limits prior to token generation.
- * Cryptographically signs access tokens server-side without leaking LiveKit API secrets.
+ * Server-side LiveKit Session, Token Generator & Agent Dispatcher
+ * - Enforces tenant limits prior to token generation.
+ * - Cryptographically signs access tokens server-side without leaking LiveKit API secrets.
+ * - Dispatches the authoritative Python voice worker ('zcloud-ai-telecaller-agent') to the room.
  */
 export async function createLiveKitSessionToken(
   params: LiveKitSessionRequest
@@ -61,7 +64,21 @@ export async function createLiveKitSessionToken(
     sessionId,
   };
 
-  // Construct standard LiveKit payload
+  // 2. Dispatch the authoritative Python voice worker ('zcloud-ai-telecaller-agent') to the room
+  let dispatchId: string | undefined;
+  try {
+    const httpHost = livekitUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
+    const dispatchClient = new AgentDispatchClient(httpHost, livekitKey, livekitSecret);
+    const dispatch = await dispatchClient.createDispatch(roomName, 'zcloud-ai-telecaller-agent', {
+      metadata: JSON.stringify(metadata),
+    });
+    dispatchId = dispatch.id;
+    console.log(`[LiveKit Dispatch] Successfully dispatched agent 'zcloud-ai-telecaller-agent' to room '${roomName}' (dispatchId: ${dispatchId})`);
+  } catch (dispatchErr: any) {
+    console.warn(`[LiveKit Dispatch] Notice: Explicit agent dispatch could not be created for room ${roomName}: ${dispatchErr.message}`);
+  }
+
+  // 3. Construct standard LiveKit payload
   const now = Math.floor(Date.now() / 1000);
   const exp = now + 60 * 60; // 1 hour validity
 
@@ -87,6 +104,7 @@ export async function createLiveKitSessionToken(
     wsUrl: livekitUrl,
     roomName,
     sessionId,
+    dispatchId,
     metadata,
     expiresAt: new Date(exp * 1000).toISOString(),
   };

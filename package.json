@@ -10,14 +10,16 @@
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "seed": "tsx prisma/seed.ts",
-    "test:isolation": "tsx src/test/tenant-isolation.ts",
-    "test:runtime": "tsx src/test/agent-runtime.test.ts"
+    "test:isolation": "tsx --env-file=.env src/test/tenant-isolation.ts",
+    "test:runtime": "tsx --env-file=.env src/test/agent-runtime.test.ts",
+    "test:call-session": "tsx --env-file=.env src/test/call-session.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "livekit-client": "^2.22.3",
+    "livekit-server-sdk": "^2.19.0",
     "lucide-react": "^0.475.0",
     "next": "^15.1.7",
     "react": "^19.0.0",

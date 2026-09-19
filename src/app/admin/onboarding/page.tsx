@@ -59,7 +59,7 @@ export default function ClientOnboardingPage() {
       type: 'APPOINTMENT_BOOKING',
       greeting: "Hello! Thank you for calling. I'm Maya, your AI assistant. How may I assist you today?",
       prompt: 'You are Maya, a warm, professional, and efficient voice agent.',
-      voiceProvider: 'Cartesia',
+      voiceProvider: 'piper',
       voiceId: 'sonic-english-female',
       language: 'en-US',
     },

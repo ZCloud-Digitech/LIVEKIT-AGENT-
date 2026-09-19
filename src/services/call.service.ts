@@ -1,5 +1,4 @@
 import { db } from '@/lib/db';
-import { recordUsage } from './entitlement.service';
 
 export async function listCalls(
   tenantId: string,
@@ -57,68 +56,4 @@ export async function getCallDetails(tenantId: string, callId: string) {
       appointments: true,
     },
   });
-}
-
-/**
- * Creates a completed simulated or real call record with automatic usage billing calculation.
- */
-export async function createCallRecord(params: {
-  tenantId: string;
-  agentId: string;
-  agentVersionId?: string;
-  callerNumber: string;
-  callerName?: string;
-  direction?: string;
-  durationSeconds: number;
-  intent?: string;
-  outcome?: string;
-  summary?: string;
-  sentiment?: string;
-  transcripts?: Array<{
-    speaker: 'AGENT' | 'CUSTOMER' | 'SYSTEM';
-    message: string;
-    toolInvocation?: string;
-    toolResult?: string;
-    latencyMs?: number;
-    timestampOffsetMs: number;
-  }>;
-}) {
-  const call = await db.call.create({
-    data: {
-      tenantId: params.tenantId,
-      agentId: params.agentId,
-      agentVersionId: params.agentVersionId,
-      callerNumber: params.callerNumber,
-      callerName: params.callerName,
-      direction: params.direction || 'INBOUND',
-      status: 'COMPLETED',
-      durationSeconds: params.durationSeconds,
-      intent: params.intent || 'Inquiry',
-      outcome: params.outcome || 'RESOLVED',
-      summary: params.summary || 'Simulated test call successfully completed.',
-      sentiment: params.sentiment || 'POSITIVE',
-      startedAt: new Date(Date.now() - params.durationSeconds * 1000),
-      endedAt: new Date(),
-    },
-  });
-
-  if (params.transcripts && params.transcripts.length > 0) {
-    await db.callTranscript.createMany({
-      data: params.transcripts.map((t) => ({
-        callId: call.id,
-        speaker: t.speaker,
-        message: t.message,
-        toolInvocation: t.toolInvocation,
-        toolResult: t.toolResult,
-        latencyMs: t.latencyMs,
-        timestampOffsetMs: t.timestampOffsetMs,
-      })),
-    });
-  }
-
-  // Calculate billable minutes and record usage
-  const minutes = Math.ceil(params.durationSeconds / 60);
-  await recordUsage(params.tenantId, 'VOICE_MINUTES', minutes, call.id);
-
-  return call;
 }

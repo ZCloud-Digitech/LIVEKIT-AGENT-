@@ -1,8 +1,25 @@
+import fs from 'fs';
+import path from 'path';
 import { db } from '../lib/db';
 import { GET } from '../app/api/internal/agent-runtime/route';
 import { NextRequest } from 'next/server';
 
-const WORKER_SECRET = process.env.WORKER_API_SECRET || 'zca_worker_secret_2026_dev_key_x99';
+// Load environment from .env safely if running in test runner
+if (!process.env.WORKER_API_SECRET) {
+  const envPath = path.resolve(__dirname, '../../.env');
+  if (fs.existsSync(envPath)) {
+    fs.readFileSync(envPath, 'utf8').split(/\r?\n/).forEach(line => {
+      const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+      if (match && !process.env[match[1]]) {
+        process.env[match[1]] = (match[2] || '').trim().replace(/^["']|["']$/g, '');
+      }
+    });
+  }
+}
+const WORKER_SECRET = process.env.WORKER_API_SECRET;
+if (!WORKER_SECRET) {
+  throw new Error('WORKER_API_SECRET environment variable is required to run acceptance tests.');
+}
 
 function createMockRequest(url: string, bearerToken?: string): NextRequest {
   const headers: Record<string, string> = {};

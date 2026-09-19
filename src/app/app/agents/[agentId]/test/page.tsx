@@ -109,52 +109,58 @@ export default function AgentTestWorkbenchPage({
         },
       ]);
 
-      // Speak greeting if supported
-      speakText(greetingText);
+      // Connect to LiveKit Room via livekit-client
+      const room = new Room({
+        adaptiveStream: true,
+        dynacast: true,
+      });
+      roomRef.current = room;
+
+      room.on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+        if (track.kind === Track.Kind.Audio) {
+          const audioElement = track.attach();
+          audioElement.id = 'livekit-agent-remote-audio';
+          document.body.appendChild(audioElement);
+          setAgentSpeaking(true);
+        }
+      });
+
+      room.on(RoomEvent.TrackUnsubscribed, (track) => {
+        track.detach();
+        setAgentSpeaking(false);
+      });
+
+      room.on(RoomEvent.Disconnected, () => {
+        setSessionActive(false);
+        setMicActive(false);
+      });
+
+      await room.connect(data.data.wsUrl, data.data.token);
+
+      try {
+        await room.localParticipant.setMicrophoneEnabled(true);
+      } catch (micErr) {
+        console.warn('Microphone unavailable or permission denied:', micErr);
+      }
     } catch (err: any) {
       alert(err.message);
     }
   };
 
   const endSession = async () => {
-    if (sessionDuration > 0 && transcripts.length > 1) {
-      setSavingCall(true);
+    if (roomRef.current) {
       try {
-        await fetch('/api/app/calls', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            agentId,
-            agentVersionId: agent?.currentVersion?.id,
-            callerNumber: '+1 (555) 019-TEST',
-            callerName: 'Test Workbench User',
-            durationSeconds: sessionDuration,
-            intent: 'Test Sandbox Verification',
-            outcome: 'RESOLVED',
-            summary: `Interactive test call completed with ${agent?.name}. Evaluated tool calls and conversation latency.`,
-            sentiment: 'POSITIVE',
-            transcripts: transcripts
-              .filter((t) => t.speaker !== 'SYSTEM')
-              .map((t, idx) => ({
-                speaker: t.speaker,
-                message: t.message,
-                toolInvocation: t.toolInvocation,
-                toolResult: t.toolResult,
-                latencyMs: t.latencyMs,
-                timestampOffsetMs: idx * 4000,
-              })),
-          }),
-        });
+        await roomRef.current.disconnect();
       } catch (err) {
-        console.error('Failed to log test call:', err);
-      } finally {
-        setSavingCall(false);
+        console.warn('LiveKit disconnect error:', err);
       }
+      roomRef.current = null;
     }
-
+    const oldAudio = document.getElementById('livekit-agent-remote-audio');
+    if (oldAudio) oldAudio.remove();
     setSessionActive(false);
     setMicActive(false);
-    if ('speechSynthesis' in window) {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
       window.speechSynthesis.cancel();
     }
   };
@@ -170,7 +176,7 @@ export default function AgentTestWorkbenchPage({
     }
   };
 
-  const handleSendMessage = (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!userInput.trim() || !sessionActive) return;
 
@@ -187,42 +193,15 @@ export default function AgentTestWorkbenchPage({
       },
     ]);
 
-    // Simulated Voice Agent Response & Tool Triggering
-    setTimeout(() => {
-      let agentReply = "I can certainly help you with that. Let me look into our system right away.";
-      let toolName: string | undefined = undefined;
-      let toolRes: string | undefined = undefined;
-
-      const lower = userText.toLowerCase();
-
-      if (lower.includes('appointment') || lower.includes('book') || lower.includes('tomorrow') || lower.includes('cleaning')) {
-        toolName = 'check_availability(date="2026-09-15", service="Hygiene")';
-        toolRes = '{"slots":["10:30 AM", "02:00 PM", "04:15 PM"]}';
-        agentReply = "I just checked our chair schedule for tomorrow. We have 10:30 AM, 2:00 PM, and 4:15 PM available. Which time works best for you?";
-      } else if (lower.includes('10:30') || lower.includes('2') || lower.includes('yes') || lower.includes('confirm')) {
-        toolName = 'book_appointment(time="10:30 AM", status="CONFIRMED")';
-        toolRes = '{"appointmentId":"apt_live_09","confirmed":true}';
-        agentReply = "Excellent! I have confirmed your appointment for 10:30 AM. A confirmation text has been dispatched. Is there anything else I can help with?";
-      } else if (lower.includes('hours') || lower.includes('open')) {
-        agentReply = "We are open Monday through Friday from 8:00 AM to 6:00 PM, and Saturdays from 9:00 AM to 1:00 PM.";
-      } else if (lower.includes('insurance') || lower.includes('delta')) {
-        agentReply = "Yes, we accept Delta Dental, MetLife, Guardian, and most major PPO dental plans with in-network benefits.";
+    // Send over LiveKit Data Channel if room connected
+    if (roomRef.current && roomRef.current.state === 'connected') {
+      try {
+        const payload = new TextEncoder().encode(userText);
+        await roomRef.current.localParticipant.publishData(payload, { reliable: true });
+      } catch (sendErr) {
+        console.warn('Failed to publish data message to LiveKit room:', sendErr);
       }
-
-      setTranscripts((prev) => [
-        ...prev,
-        {
-          speaker: 'AGENT',
-          message: agentReply,
-          toolInvocation: toolName,
-          toolResult: toolRes,
-          latencyMs: Math.floor(Math.random() * 120) + 180, // Realistic sub-300ms latency!
-          timestamp: new Date().toLocaleTimeString(),
-        },
-      ]);
-
-      speakText(agentReply);
-    }, 600);
+    }
   };
 
   return (

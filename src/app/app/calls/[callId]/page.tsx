@@ -90,7 +90,7 @@ export default function CallDetailPage({
           <h2 className="title-sm">AI Generated Call Summary</h2>
         </div>
         <p style={{ fontSize: '13.5px', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-          {call.summary || 'Caller requested service information and appointment scheduling. The voice assistant successfully processed the inquiry.'}
+          {call.summary || 'No summary available for this call.'}
         </p>
       </div>
 
