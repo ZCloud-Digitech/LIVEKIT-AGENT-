@@ -41,9 +41,13 @@ export async function createLiveKitSessionToken(
     throw new Error('Monthly voice minutes quota exceeded for this tenant. Please upgrade your plan.');
   }
 
-  const livekitKey = process.env.LIVEKIT_API_KEY || 'APIdemo_livekit_key_server_only';
-  const livekitSecret = process.env.LIVEKIT_API_SECRET || 'SECdemo_livekit_secret_never_expose_to_client';
-  const livekitUrl = process.env.LIVEKIT_URL || 'wss://livekit.zcallagent.ai';
+  const livekitKey = process.env.LIVEKIT_API_KEY;
+  const livekitSecret = process.env.LIVEKIT_API_SECRET;
+  const livekitUrl = process.env.LIVEKIT_URL;
+
+  if (!livekitKey || !livekitSecret || !livekitUrl) {
+    throw new Error('LiveKit server credentials are not properly configured. LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET must be set in the server environment.');
+  }
 
   const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const roomName = `room_${tenantId.substring(0, 8)}_${agentId.substring(0, 8)}_${sessionId.substring(5, 11)}`;

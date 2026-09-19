@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, use } from 'react';
+import { Room, RoomEvent, Track } from 'livekit-client';
 import Link from 'next/link';
 import {
   Mic,
@@ -44,6 +45,7 @@ export default function AgentTestWorkbenchPage({
   const [sessionDuration, setSessionDuration] = useState(0);
   const [savingCall, setSavingCall] = useState(false);
   const timerRef = useRef<any>(null);
+  const roomRef = useRef<Room | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
