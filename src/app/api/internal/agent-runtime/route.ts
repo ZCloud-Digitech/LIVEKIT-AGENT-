@@ -1,5 +1,6 @@
-﻿import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveTenantBusinessRules } from '@/services/rules.service';
 
 function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
   if (!val) return fallback;
@@ -14,7 +15,7 @@ function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
  * Internal Machine-to-Machine Agent Runtime API
  * Authenticated strictly via Authorization: Bearer <WORKER_API_SECRET>.
  * Never uses browser cookies or exposes secrets.
- * Provides complete, tenant-isolated clinic profile, business hours, and knowledge.
+ * Provides complete, tenant-isolated clinic profile, business hours, rules, and knowledge.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -211,6 +212,7 @@ export async function GET(req: NextRequest) {
       aiModel: version.aiModel || 'gemini-2.5-flash',
       sttProvider: (version as any).sttProvider || 'faster-whisper',
       toolsConfig: safeJsonParse(version.toolsConfigJson, {}),
+      businessRules: resolveTenantBusinessRules(tenantId, (version as any).businessRulesJson),
       businessHours: safeJsonParse(version.businessHoursJson, {}),
       transferRules: safeJsonParse(version.transferRulesJson, {}),
       clinicProfile: {
@@ -250,4 +252,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

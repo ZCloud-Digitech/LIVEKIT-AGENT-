@@ -190,7 +190,17 @@ model UsageRecord {
   metricType  String   // VOICE_MINUTES, CALL_COUNT, STORAGE_BYTES, CONCURRENT_PEAK
   quantity    Float
   callId      String?
-  notes       String?
+  notes           String?
+
+  // Phase 4: Concurrency & Integrations
+  slotKey         String?  @unique
+  idempotencyKey  String?
+  googleEventId   String?
+  sheetSyncStatus String?  @default("PENDING")
+  sheetRowId      String?
+  whatsappStatus  String?  @default("PENDING")
+  whatsappMessageId String?
+  confirmationReceived Boolean @default(true)
   timestamp   DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -247,6 +257,7 @@ model AgentVersion {
   businessHoursJson   String?   @default("{}")
   transferRulesJson   String?   @default("{}")
   toolsConfigJson     String?   @default("{\"check_availability\":true,\"book_appointment\":true,\"transfer_call\":true}")
+  businessRulesJson   String?   @default("{}")
   knowledgeConfigJson String?   @default("{}")
   publishedBy         String?
   publishedAt         DateTime?
@@ -370,6 +381,16 @@ model Appointment {
   durationMinutes Int      @default(30)
   status          String   @default("UPCOMING") // UPCOMING, COMPLETED, CANCELLED, RESCHEDULED
   notes           String?
+
+  // Phase 4: Concurrency & Integrations
+  slotKey         String?  @unique
+  idempotencyKey  String?
+  googleEventId   String?
+  sheetSyncStatus String?  @default("PENDING")
+  sheetRowId      String?
+  whatsappStatus  String?  @default("PENDING")
+  whatsappMessageId String?
+  confirmationReceived Boolean @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -379,6 +400,7 @@ model Appointment {
   call     Call?     @relation(fields: [callId], references: [id])
 
   @@index([tenantId, date])
+  @@index([tenantId, date, time])
   @@map("appointments")
 }
 
