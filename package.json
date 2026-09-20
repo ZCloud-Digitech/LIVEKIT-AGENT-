@@ -12,7 +12,8 @@
     "seed": "tsx prisma/seed.ts",
     "test:isolation": "tsx --env-file=.env src/test/tenant-isolation.ts",
     "test:runtime": "tsx --env-file=.env src/test/agent-runtime.test.ts",
-    "test:call-session": "tsx --env-file=.env src/test/call-session.test.ts"
+    "test:call-session": "tsx --env-file=.env src/test/call-session.test.ts",
+    "test:clinic-tools": "tsx --env-file=.env src/test/clinic-tools.test.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.4.1",

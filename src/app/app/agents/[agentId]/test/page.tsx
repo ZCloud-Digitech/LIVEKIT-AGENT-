@@ -135,6 +135,28 @@ export default function AgentTestWorkbenchPage({
         setMicActive(false);
       });
 
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array, participant: any) => {
+        try {
+          const str = new TextDecoder().decode(payload);
+          const parsed = JSON.parse(str);
+          if (parsed.type === 'transcript') {
+            setTranscripts((prev) => [
+              ...prev,
+              {
+                speaker: parsed.speaker || 'AGENT',
+                message: parsed.message || '',
+                toolInvocation: parsed.toolInvocation,
+                toolResult: parsed.toolResult,
+                latencyMs: parsed.latencyMs,
+                timestamp: parsed.timestamp || new Date().toLocaleTimeString(),
+              },
+            ]);
+          }
+        } catch {
+          // ignore non-json data
+        }
+      });
+
       await room.connect(data.data.wsUrl, data.data.token);
 
       try {

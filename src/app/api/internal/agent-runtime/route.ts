@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
 function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
@@ -14,6 +14,7 @@ function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
  * Internal Machine-to-Machine Agent Runtime API
  * Authenticated strictly via Authorization: Bearer <WORKER_API_SECRET>.
  * Never uses browser cookies or exposes secrets.
+ * Provides complete, tenant-isolated clinic profile, business hours, and knowledge.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -54,10 +55,27 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3. Verify tenant exists
+    // 3. Verify tenant exists and fetch clinic details & knowledge
     const tenant = await db.tenant.findUnique({
       where: { id: tenantId },
-      select: { id: true, status: true },
+      select: {
+        id: true,
+        name: true,
+        legalName: true,
+        phone: true,
+        email: true,
+        timezone: true,
+        address: true,
+        city: true,
+        state: true,
+        postalCode: true,
+        description: true,
+        status: true,
+        knowledgeDocs: {
+          where: { status: 'READY' },
+          select: { title: true, content: true },
+        },
+      },
     });
 
     if (!tenant) {
@@ -170,13 +188,17 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Format clean clinic address
+    const addressParts = [tenant.address, tenant.city, tenant.state, tenant.postalCode].filter(Boolean);
+    const formattedAddress = addressParts.join(', ') || 'Main Clinic Location';
+
     // 7. Assemble strictly runtime-safe configuration (NO secrets, NO passwords, NO tenant internals)
     const runtimeConfig = {
       tenantId,
       agentId: agent.id,
       agentVersionId: version.id,
       name: agent.name,
-      prompt: version.prompt || version.systemInstructions || 'You are a professional voice agent.',
+      prompt: version.prompt || version.systemInstructions || 'You are a professional clinic AI voice assistant.',
       greeting: version.greeting || 'Hello, how can I help you today?',
       closingMessage: version.closingMessage || 'Thank you for calling. Goodbye.',
       personality: version.personality || 'professional, empathetic, concise',
@@ -191,6 +213,24 @@ export async function GET(req: NextRequest) {
       toolsConfig: safeJsonParse(version.toolsConfigJson, {}),
       businessHours: safeJsonParse(version.businessHoursJson, {}),
       transferRules: safeJsonParse(version.transferRulesJson, {}),
+      clinicProfile: {
+        name: tenant.name,
+        phone: tenant.phone || '+1 (555) 234-5678',
+        email: tenant.email || 'info@clinic.example.com',
+        timezone: tenant.timezone || 'America/New_York',
+        address: formattedAddress,
+        services: [
+          'Routine Consultation & Examination',
+          'Dental Cleaning & Checkup',
+          'Follow-up Appointment',
+          'Diagnostic Review',
+          'Urgent Care Triage',
+        ],
+      },
+      knowledgeBase: (tenant.knowledgeDocs || []).map((doc) => ({
+        title: doc.title,
+        content: doc.content || '',
+      })),
     };
 
     return NextResponse.json({
@@ -210,3 +250,4 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
