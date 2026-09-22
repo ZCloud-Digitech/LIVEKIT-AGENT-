@@ -248,6 +248,9 @@ model AgentVersion {
   voiceLanguage       String    @default("en-US")
   voiceSpeed          Float     @default(1.0)
   aiModel             String    @default("gemini-2.5-flash") // gpt-4o, gpt-4o-mini, claude-3-5-haiku
+  llmProvider         String?   @default("gemini")
+  llmBaseUrl          String?
+  sttProvider         String?   @default("faster-whisper")
   temperature         Float     @default(0.7)
   maxTokens           Int       @default(500)
   silenceTimeoutMs    Int       @default(2000)
