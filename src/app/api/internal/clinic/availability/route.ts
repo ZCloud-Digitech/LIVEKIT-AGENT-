@@ -199,7 +199,7 @@ export async function POST(req: NextRequest) {
       where: {
         tenantId,
         date,
-        status: { in: ['UPCOMING', 'CONFIRMED'] },
+        status: { in: ['UPCOMING', 'CONFIRMED', 'SCHEDULED', 'RESCHEDULED'] },
       },
       select: { time: true },
     });

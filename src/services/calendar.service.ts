@@ -169,7 +169,7 @@ export class LocalDbCalendarProvider implements ICalendarProvider {
       where: {
         tenantId,
         date,
-        status: { in: ['UPCOMING', 'CONFIRMED'] },
+        status: { in: ['UPCOMING', 'CONFIRMED', 'SCHEDULED', 'RESCHEDULED'] },
       },
       select: { time: true },
     });
@@ -217,7 +217,7 @@ export class LocalDbCalendarProvider implements ICalendarProvider {
       const existingSlotBooking = await tx.appointment.findFirst({
         where: {
           slotKey,
-          status: { in: ['UPCOMING', 'CONFIRMED'] },
+          status: { in: ['UPCOMING', 'CONFIRMED', 'SCHEDULED', 'RESCHEDULED'] },
         },
         include: { customer: true },
       });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveTenantBusinessRules } from '@/services/rules.service';
+import { clinicService } from '@/services/clinic.service';
 
 function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
   if (!val) return fallback;
@@ -193,7 +194,20 @@ export async function GET(req: NextRequest) {
     const addressParts = [tenant.address, tenant.city, tenant.state, tenant.postalCode].filter(Boolean);
     const formattedAddress = addressParts.join(', ') || 'Main Clinic Location';
 
-    // 7. Assemble strictly runtime-safe configuration (NO secrets, NO passwords, NO tenant internals)
+    // 7. Resolve dynamic clinic profile, services, and business hours from authoritative database
+    let profileData: any = null;
+    let servicesList: string[] = [];
+    let hoursSchedule: any = null;
+    try {
+      profileData = await clinicService.getClinicProfile(tenantId);
+      const activeServices = await clinicService.listServices(tenantId, true);
+      servicesList = activeServices.map((s) => s.name);
+      hoursSchedule = await clinicService.getBusinessHours(tenantId);
+    } catch (e) {
+      console.warn('Fallback to legacy profile/hours:', e);
+    }
+
+    // 8. Assemble strictly runtime-safe configuration (NO secrets, NO passwords, NO tenant internals)
     const runtimeConfig = {
       tenantId,
       agentId: agent.id,
@@ -216,15 +230,17 @@ export async function GET(req: NextRequest) {
       aiMode: (version as any).llmProvider === 'ollama' || version.aiModel?.includes('qwen') ? 'LOCAL_AI' : ((version as any).llmProvider === 'hybrid' ? 'HYBRID' : 'CLOUD_AI'),
       toolsConfig: safeJsonParse(version.toolsConfigJson, {}),
       businessRules: resolveTenantBusinessRules(tenantId, (version as any).businessRulesJson),
-      businessHours: safeJsonParse(version.businessHoursJson, {}),
+      businessHours: hoursSchedule ? { schedule: hoursSchedule } : safeJsonParse(version.businessHoursJson, {}),
       transferRules: safeJsonParse(version.transferRulesJson, {}),
       clinicProfile: {
-        name: tenant.name,
-        phone: tenant.phone || '+1 (555) 234-5678',
-        email: tenant.email || 'info@clinic.example.com',
-        timezone: tenant.timezone || 'America/New_York',
-        address: formattedAddress,
-        services: [
+        name: profileData?.clinicName || tenant.name,
+        phone: profileData?.phone || tenant.phone || '+1 (555) 234-5678',
+        email: profileData?.email || tenant.email || 'info@clinic.example.com',
+        timezone: profileData?.timezone || tenant.timezone || 'America/New_York',
+        address: profileData?.address || formattedAddress,
+        website: profileData?.website || undefined,
+        emergencyInstruction: profileData?.emergencyInstruction || undefined,
+        services: servicesList.length > 0 ? servicesList : [
           'Routine Consultation & Examination',
           'Dental Cleaning & Checkup',
           'Follow-up Appointment',

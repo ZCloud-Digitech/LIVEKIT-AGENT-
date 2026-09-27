@@ -69,6 +69,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     { label: 'Overview', href: '/app', icon: LayoutDashboard },
     { label: 'Voice Agents', href: '/app/agents', icon: Radio },
     { label: 'Calls & Transcripts', href: '/app/calls', icon: PhoneCall },
+    { label: 'Clinic Setup', href: '/app/clinic', icon: Building },
     { label: 'Appointments', href: '/app/appointments', icon: Calendar },
     { label: 'Customers (CRM)', href: '/app/customers', icon: Users },
     { label: 'Phone Numbers', href: '/app/phone-numbers', icon: Phone },

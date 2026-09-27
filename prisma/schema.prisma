@@ -69,6 +69,9 @@ model Tenant {
   auditLogs     AuditLog[]
   notifications Notification[]
   subscriptions TenantSubscription[]
+  clinicProfile ClinicProfile?
+  clinicServices ClinicService[]
+  businessHours BusinessHours[]
 
   @@map("tenants")
 }
@@ -296,6 +299,10 @@ model Call {
   transferredTo    String?
   failureReason    String?
   livekitRoomId    String?
+  sipCallId        String?
+  sipTrunkId       String?
+  provider         String?   @default("Plivo")
+  idempotencyKey   String?   @unique
   startedAt        DateTime  @default(now())
   endedAt          DateTime?
   createdAt        DateTime  @default(now())
@@ -379,6 +386,7 @@ model Appointment {
   callId          String?
   title           String
   serviceName     String
+  serviceId       String?
   date            String   // YYYY-MM-DD
   time            String   // HH:mm
   durationMinutes Int      @default(30)
@@ -399,6 +407,7 @@ model Appointment {
 
   tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer Customer? @relation(fields: [customerId], references: [id])
+  service  ClinicService? @relation(fields: [serviceId], references: [id])
   agent    Agent?    @relation(fields: [agentId], references: [id])
   call     Call?     @relation(fields: [callId], references: [id])
 
@@ -420,12 +429,18 @@ model PhoneNumber {
   status        String   @default("ACTIVE") // ACTIVE, INACTIVE, RELEASED
   incomingCount Int      @default(0)
   outgoingCount Int      @default(0)
-  capabilities  String?  @default("voice,sms")
-  createdAt     DateTime @default(now())
+  capabilities     String?  @default("voice")
+  providerNumberId String?
+  sipTrunkId       String?
+  direction        String   @default("INBOUND") // INBOUND, OUTBOUND, BOTH
+  metadata         String?  @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @default(now()) @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, status])
+  @@index([tenantId, assignedAgentId])
   @@map("phone_numbers")
 }
 
@@ -544,4 +559,62 @@ model Notification {
 
   @@index([tenantId, read])
   @@map("notifications")
+}
+
+// -------------------------------------------------------------
+// CLINIC BUSINESS MANAGEMENT (PHASE 3)
+// -------------------------------------------------------------
+model ClinicProfile {
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  clinicName          String
+  description         String?
+  phone               String?
+  email               String?
+  address             String?
+  timezone            String   @default("America/New_York")
+  website             String?
+  emergencyInstruction String? @default("If this is a life-threatening medical emergency, please hang up immediately and call 911 or proceed to the nearest emergency room.")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("clinic_profiles")
+}
+
+model ClinicService {
+  id              String   @id @default(cuid())
+  tenantId        String
+  name            String
+  description     String?
+  durationMinutes Int      @default(30)
+  price           Float?   @default(0)
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId, active])
+  @@map("clinic_services")
+}
+
+model BusinessHours {
+  id        String   @id @default(cuid())
+  tenantId  String
+  dayOfWeek String   // monday, tuesday, wednesday, thursday, friday, saturday, sunday
+  openTime  String   @default("08:00") // HH:mm
+  closeTime String   @default("18:00") // HH:mm
+  closed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, dayOfWeek])
+  @@index([tenantId])
+  @@map("business_hours")
 }

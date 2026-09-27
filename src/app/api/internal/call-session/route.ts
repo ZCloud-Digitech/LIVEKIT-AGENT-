@@ -199,7 +199,8 @@ export async function POST(req: NextRequest) {
       include: { transcripts: true },
     });
 
-    if (existingCall) {
+    // If call is already finalized or has transcripts recorded, return idempotent response
+    if (existingCall && (existingCall.status === 'COMPLETED' || existingCall.transcripts.length > 0)) {
       const billableMin = Math.ceil(existingCall.durationSeconds / 60);
       return NextResponse.json({
         success: true,
@@ -221,26 +222,45 @@ export async function POST(req: NextRequest) {
 
     // 8. Atomic Persistence: Call, CallTranscript, and UsageRecord in ONE transaction
     const transactionResult = await db.$transaction(async (tx) => {
-      // 8a. Create authoritative Call record
-      const call = await tx.call.create({
-        data: {
-          tenantId,
-          agentId,
-          agentVersionId: effectiveVersionId,
-          callerNumber: callerNumber || (callerIdentity ? `+1-${callerIdentity}` : '+1 (555) 019-LIVE'),
-          callerName: callerName || callerIdentity || 'LiveKit Voice Caller',
-          direction: direction || 'INBOUND',
-          status: status || 'COMPLETED',
-          durationSeconds: parsedDuration,
-          intent: intent || 'Voice Telecaller Session',
-          outcome: outcome || 'RESOLVED',
-          summary: summary || (transcripts?.length ? `Voice call completed with ${transcripts.length} transcript turns.` : 'Voice call completed.'),
-          sentiment: sentiment || 'NEUTRAL',
-          livekitRoomId: roomName,
-          startedAt: callStart,
-          endedAt: callEnd,
-        },
-      });
+      // 8a. Create or finalize authoritative Call record
+      let call;
+      if (existingCall) {
+        call = await tx.call.update({
+          where: { id: existingCall.id },
+          data: {
+            agentVersionId: effectiveVersionId,
+            callerNumber: callerNumber || existingCall.callerNumber,
+            callerName: callerName || existingCall.callerName,
+            status: status || 'COMPLETED',
+            durationSeconds: parsedDuration,
+            intent: intent || existingCall.intent || 'Voice Telecaller Session',
+            outcome: outcome || existingCall.outcome || 'RESOLVED',
+            summary: summary || (transcripts?.length ? `Voice call completed with ${transcripts.length} transcript turns.` : 'Voice call completed.'),
+            sentiment: sentiment || 'NEUTRAL',
+            endedAt: callEnd,
+          },
+        });
+      } else {
+        call = await tx.call.create({
+          data: {
+            tenantId,
+            agentId,
+            agentVersionId: effectiveVersionId,
+            callerNumber: callerNumber || (callerIdentity ? `+1-${callerIdentity}` : '+1 (555) 019-LIVE'),
+            callerName: callerName || callerIdentity || 'LiveKit Voice Caller',
+            direction: direction || 'INBOUND',
+            status: status || 'COMPLETED',
+            durationSeconds: parsedDuration,
+            intent: intent || 'Voice Telecaller Session',
+            outcome: outcome || 'RESOLVED',
+            summary: summary || (transcripts?.length ? `Voice call completed with ${transcripts.length} transcript turns.` : 'Voice call completed.'),
+            sentiment: sentiment || 'NEUTRAL',
+            livekitRoomId: roomName,
+            startedAt: callStart,
+            endedAt: callEnd,
+          },
+        });
+      }
 
       // 8b. Persist transcripts if provided
       let tCount = 0;
