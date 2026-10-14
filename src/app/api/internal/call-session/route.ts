@@ -14,9 +14,18 @@ export async function POST(req: NextRequest) {
     // 1. Authenticate via WORKER_API_SECRET
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-
     const expectedSecret = process.env.WORKER_API_SECRET;
-    if (!expectedSecret || !token || token !== expectedSecret) {
+
+    const crypto = await import('crypto');
+    const tokenBuf = Buffer.from(token);
+    const expectedBuf = Buffer.from(expectedSecret || '');
+    const isSecretValid =
+      Boolean(expectedSecret) &&
+      Boolean(token) &&
+      tokenBuf.length === expectedBuf.length &&
+      crypto.timingSafeEqual(tokenBuf, expectedBuf);
+
+    if (!isSecretValid) {
       return NextResponse.json(
         {
           success: false,
@@ -281,14 +290,26 @@ export async function POST(req: NextRequest) {
 
       // 8c. Server-authoritative billable minutes calculation and atomic quota deduction
       if (billableMinutes > 0) {
-        await tx.usageRecord.create({
-          data: {
+        const usageKey = `usage_${call.id}_VOICE_MINUTES`;
+        const existingUsage = await tx.usageRecord.findFirst({
+          where: {
             tenantId,
             metricType: 'VOICE_MINUTES',
-            quantity: billableMinutes,
-            callId: call.id,
+            OR: [{ slotKey: usageKey }, { callId: call.id }],
           },
         });
+        if (!existingUsage) {
+          await tx.usageRecord.create({
+            data: {
+              tenantId,
+              metricType: 'VOICE_MINUTES',
+              quantity: billableMinutes,
+              callId: call.id,
+              slotKey: usageKey,
+              idempotencyKey: usageKey,
+            },
+          });
+        }
       }
 
       // Test hook to verify atomicity rollback

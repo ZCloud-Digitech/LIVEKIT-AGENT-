@@ -47,7 +47,7 @@ export default function LandingPage() {
           <Link href="/auth/login" className="btn btn-secondary btn-sm">
             Sign In
           </Link>
-          <Link href="/auth/login" className="btn btn-primary btn-sm">
+          <Link href="/app" className="btn btn-primary btn-sm">
             Open Dashboard <ArrowRight size={14} />
           </Link>
         </div>
@@ -97,10 +97,10 @@ export default function LandingPage() {
           </p>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-            <Link href="/auth/login" className="btn btn-primary btn-lg" style={{ padding: '14px 28px', fontSize: '15px' }}>
+            <Link href="/app" className="btn btn-primary btn-lg" style={{ padding: '14px 28px', fontSize: '15px' }}>
               Launch Client Portal <ArrowRight size={16} />
             </Link>
-            <Link href="/auth/login?tab=admin" className="btn btn-secondary btn-lg" style={{ padding: '14px 28px', fontSize: '15px' }}>
+            <Link href="/admin" className="btn btn-secondary btn-lg" style={{ padding: '14px 28px', fontSize: '15px' }}>
               Platform Admin Console
             </Link>
           </div>

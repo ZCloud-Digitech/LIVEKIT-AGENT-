@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { assertTenantAccess } from '@/lib/security';
-import { getTenantUsageSummary } from '@/services/entitlement.service';
+import { getTenantUsageSummary, calculateSubscriptionBilling } from '@/services/entitlement.service';
 
 export async function GET() {
   try {
@@ -11,8 +11,18 @@ export async function GET() {
     }
     assertTenantAccess(session, session.tenantId);
 
-    const usage = await getTenantUsageSummary(session.tenantId);
-    return NextResponse.json({ success: true, data: usage });
+    const [usage, billing] = await Promise.all([
+      getTenantUsageSummary(session.tenantId),
+      calculateSubscriptionBilling(session.tenantId),
+    ]);
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...usage,
+        billing,
+      },
+    });
   } catch (err: any) {
     return NextResponse.json(
       { success: false, error: { code: err.code || 'UNAUTHORIZED', message: err.message } },

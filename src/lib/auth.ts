@@ -3,7 +3,19 @@ import jwt from 'jsonwebtoken';
 import { cookies } from 'next/headers';
 import { AuthSession, PlatformRole, TenantRole } from '@/types';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'zcallagent_super_secure_jwt_session_signing_key_2026_x89';
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (process.env.NODE_ENV === 'production') {
+    if (!secret || secret === 'zcallagent_super_secure_jwt_session_signing_key_2026_x89' || secret.length < 32) {
+      throw new Error(
+        'CRITICAL SECURITY ERROR: A secure, non-default JWT_SECRET of at least 32 characters must be configured in production.'
+      );
+    }
+    return secret;
+  }
+  return secret || 'zcallagent_super_secure_jwt_session_signing_key_2026_x89';
+}
+
 export const AUTH_COOKIE_NAME = 'zca_session';
 
 export async function hashPassword(plainText: string): Promise<string> {
@@ -15,12 +27,12 @@ export async function verifyPassword(plainText: string, hashed: string): Promise
 }
 
 export function signSessionToken(session: AuthSession): string {
-  return jwt.sign(session, JWT_SECRET, { expiresIn: '72h' });
+  return jwt.sign(session, getJwtSecret(), { expiresIn: '72h' });
 }
 
 export function verifySessionToken(token: string): AuthSession | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as AuthSession;
+    const decoded = jwt.verify(token, getJwtSecret()) as AuthSession;
     return decoded;
   } catch (err) {
     return null;

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveTenantBusinessRules } from '@/services/rules.service';
 import { clinicService } from '@/services/clinic.service';
+import { decryptSecret } from '@/lib/encryption';
 
 function safeJsonParse(val: string | null | undefined, fallback: any = {}) {
   if (!val) return fallback;
@@ -23,9 +24,18 @@ export async function GET(req: NextRequest) {
     // 1. Authenticate via WORKER_API_SECRET
     const authHeader = req.headers.get('authorization') || '';
     const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
-
     const expectedSecret = process.env.WORKER_API_SECRET;
-    if (!expectedSecret || !token || token !== expectedSecret) {
+
+    const crypto = await import('crypto');
+    const tokenBuf = Buffer.from(token);
+    const expectedBuf = Buffer.from(expectedSecret || '');
+    const isSecretValid =
+      Boolean(expectedSecret) &&
+      Boolean(token) &&
+      tokenBuf.length === expectedBuf.length &&
+      crypto.timingSafeEqual(tokenBuf, expectedBuf);
+
+    if (!isSecretValid) {
       return NextResponse.json(
         {
           success: false,
@@ -57,7 +67,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 3. Verify tenant exists and fetch clinic details & knowledge
+    // 3. Verify tenant exists and fetch clinic details, knowledge, and BYOK connections
     const tenant = await db.tenant.findUnique({
       where: { id: tenantId },
       select: {
@@ -76,6 +86,10 @@ export async function GET(req: NextRequest) {
         knowledgeDocs: {
           where: { status: 'READY' },
           select: { title: true, content: true },
+        },
+        integrations: {
+          where: { status: 'CONNECTED' },
+          select: { provider: true, credentialsEncrypted: true },
         },
       },
     });
@@ -207,7 +221,22 @@ export async function GET(req: NextRequest) {
       console.warn('Fallback to legacy profile/hours:', e);
     }
 
-    // 8. Assemble strictly runtime-safe configuration (NO secrets, NO passwords, NO tenant internals)
+    // 8. Decrypt tenant BYOK credentials securely for machine-to-machine worker use
+    const byokCredentials: Record<string, string> = {};
+    if (tenant.integrations) {
+      for (const int of tenant.integrations) {
+        if (int.credentialsEncrypted) {
+          const decrypted = decryptSecret(int.credentialsEncrypted);
+          if (decrypted) {
+            if (int.provider === 'BYOK_SARVAM') byokCredentials.sarvamApiKey = decrypted;
+            if (int.provider === 'BYOK_GEMINI') byokCredentials.geminiApiKey = decrypted;
+            if (int.provider === 'BYOK_OPENAI') byokCredentials.openaiApiKey = decrypted;
+          }
+        }
+      }
+    }
+
+    // 9. Assemble strictly runtime-safe configuration
     const runtimeConfig = {
       tenantId,
       agentId: agent.id,
@@ -232,6 +261,12 @@ export async function GET(req: NextRequest) {
       businessRules: resolveTenantBusinessRules(tenantId, (version as any).businessRulesJson),
       businessHours: hoursSchedule ? { schedule: hoursSchedule } : safeJsonParse(version.businessHoursJson, {}),
       transferRules: safeJsonParse(version.transferRulesJson, {}),
+      byokCredentials,
+      languageSettings: {
+        voiceLanguage: version.voiceLanguage || 'en-US',
+        routeThanglishToSarvam: true,
+        multilingualMode: true,
+      },
       clinicProfile: {
         name: profileData?.clinicName || tenant.name,
         phone: profileData?.phone || tenant.phone || '+1 (555) 234-5678',

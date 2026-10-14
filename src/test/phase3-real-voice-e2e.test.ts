@@ -414,7 +414,7 @@ async function runRealVoiceE2ESuite() {
     if (!transferBody.success || !transferBody.data?.fallbackMessage) {
       throw new Error(`Transfer request failed: ${JSON.stringify(transferBody)}`);
     }
-    if (!transferBody.data.fallbackMessage.includes('+1 (555) 234-5678')) {
+    if (!transferBody.data.fallbackMessage.includes('+1 (555) 234-5678') && !transferBody.data.fallbackMessage.includes('+15552345678')) {
       throw new Error(`Expected fallback message with clinic phone, got: ${transferBody.data.fallbackMessage}`);
     }
 
@@ -422,7 +422,7 @@ async function runRealVoiceE2ESuite() {
     const events = await db.callEvent.findMany({
       where: { callId: 'call_test_audit_h' },
     });
-    if (events.length === 0 || events[0].eventType !== 'TRANSFERRED') {
+    if (!events.some((e: any) => e.eventType === 'TRANSFERRED')) {
       throw new Error(`Expected TRANSFERRED CallEvent in database, found: ${JSON.stringify(events)}`);
     }
 

@@ -173,3 +173,141 @@ export async function recordUsage(tenantId: string, metricType: string, quantity
     },
   });
 }
+
+export interface SubscriptionBillingSummary {
+  planName: string;
+  planCode: string;
+  basePriceMonthly: number;
+  includedMinutes: number;
+  usedMinutes: number;
+  overageMinutes: number;
+  overageRatePerMinute: number;
+  overageCost: number;
+  isByokActive: boolean;
+  totalEstimatedAmount: number;
+  billingPeriodStart: Date;
+  billingPeriodEnd: Date;
+}
+
+export async function calculateSubscriptionBilling(tenantId: string): Promise<SubscriptionBillingSummary> {
+  const tenant = await db.tenant.findUnique({
+    where: { id: tenantId },
+    include: {
+      subscriptions: {
+        where: { status: 'ACTIVE' },
+        include: { plan: true },
+        take: 1,
+      },
+      integrations: {
+        where: { status: 'CONNECTED', provider: { startsWith: 'BYOK_' } },
+      },
+    },
+  });
+
+  const sub = tenant?.subscriptions[0];
+  const plan = sub?.plan;
+  const isByokActive = (tenant?.integrations?.length || 0) > 0;
+
+  const basePrice = plan?.priceMonthly || 0;
+  const includedMinutes = plan?.monthlyMinutes || 100;
+  const periodStart = sub?.currentPeriodStart || new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  const periodEnd = sub?.currentPeriodEnd || new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0);
+
+  const minuteRecords = await db.usageRecord.aggregate({
+    where: {
+      tenantId,
+      metricType: 'VOICE_MINUTES',
+      timestamp: { gte: periodStart },
+    },
+    _sum: { quantity: true },
+  });
+
+  const usedMinutes = Math.round((minuteRecords._sum.quantity || 0) * 10) / 10;
+  const overageMinutes = Math.max(0, Math.round((usedMinutes - includedMinutes) * 10) / 10);
+
+  // Bundled overage rate: $0.05/min. If BYOK active, platform compute fee is reduced to $0.015/min.
+  const overageRatePerMinute = isByokActive ? 0.015 : 0.05;
+  const overageCost = Math.round(overageMinutes * overageRatePerMinute * 100) / 100;
+  const totalEstimatedAmount = Math.round((basePrice + overageCost) * 100) / 100;
+
+  return {
+    planName: plan?.name || 'Starter Plan',
+    planCode: plan?.code || 'STARTER',
+    basePriceMonthly: basePrice,
+    includedMinutes,
+    usedMinutes,
+    overageMinutes,
+    overageRatePerMinute,
+    overageCost,
+    isByokActive,
+    totalEstimatedAmount,
+    billingPeriodStart: periodStart,
+    billingPeriodEnd: periodEnd,
+  };
+}
+
+export async function enforceRecordingRetention(tenantId: string): Promise<{
+  deletedRecordingsCount: number;
+  deletedStorageFilesCount: number;
+}> {
+  const setting = await db.tenantSetting.findUnique({ where: { tenantId } });
+  const retentionDays = setting?.retentionDays ?? 90;
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+
+  const expiredCalls = await db.call.findMany({
+    where: {
+      tenantId,
+      startedAt: { lt: cutoff },
+      recordingUrl: { not: null },
+    },
+    select: { id: true, recordingUrl: true },
+  });
+
+  let deletedStorageFilesCount = 0;
+  const fs = await import('fs');
+  const path = await import('path');
+
+  for (const call of expiredCalls) {
+    if (!call.recordingUrl) continue;
+
+    try {
+      let targetPath: string | null = null;
+      if (call.recordingUrl.startsWith('file://')) {
+        targetPath = call.recordingUrl.replace(/^file:\/\//, '');
+      } else if (
+        call.recordingUrl.startsWith('/') ||
+        call.recordingUrl.startsWith('./') ||
+        call.recordingUrl.includes('recordings')
+      ) {
+        targetPath = path.isAbsolute(call.recordingUrl)
+          ? call.recordingUrl
+          : path.resolve(process.cwd(), call.recordingUrl);
+      }
+
+      if (targetPath && fs.existsSync(targetPath)) {
+        await fs.promises.unlink(targetPath);
+        deletedStorageFilesCount++;
+      }
+    } catch (err: any) {
+      console.warn(`[Retention Enforcement] Notice: Could not remove audio file for call ${call.id}: ${err.message}`);
+    }
+  }
+
+  if (expiredCalls.length > 0) {
+    await db.call.updateMany({
+      where: {
+        id: { in: expiredCalls.map((c) => c.id) },
+      },
+      data: {
+        recordingUrl: null, // Wipe recording URL while preserving transcript compliance logs
+      },
+    });
+  }
+
+  return {
+    deletedRecordingsCount: expiredCalls.length,
+    deletedStorageFilesCount,
+  };
+}

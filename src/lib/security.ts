@@ -86,3 +86,35 @@ export function assertTenantAccess(
 
   return session;
 }
+
+/**
+ * Validates Worker API Secret using timing-safe buffer comparison.
+ * In production, strictly requires WORKER_API_SECRET to be configured.
+ */
+export function assertWorkerSecret(authHeader: string | null): void {
+  const expectedSecret = process.env.WORKER_API_SECRET;
+  if (process.env.NODE_ENV === 'production' && (!expectedSecret || expectedSecret.length < 16)) {
+    throw new AuthorizationError(
+      'CRITICAL SECURITY ERROR: WORKER_API_SECRET must be configured in production.',
+      'CONFIG_ERROR',
+      500
+    );
+  }
+
+  if (!authHeader) {
+    throw new AuthorizationError('Authorization header missing.', 'UNAUTHORIZED', 401);
+  }
+
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : '';
+  if (!token || !expectedSecret) {
+    throw new AuthorizationError('Invalid or missing worker secret.', 'UNAUTHORIZED', 401);
+  }
+
+  const tokenBuf = Buffer.from(token);
+  const expectedBuf = Buffer.from(expectedSecret);
+
+  const crypto = require('crypto');
+  if (tokenBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(tokenBuf, expectedBuf)) {
+    throw new AuthorizationError('Invalid worker API secret.', 'UNAUTHORIZED', 401);
+  }
+}

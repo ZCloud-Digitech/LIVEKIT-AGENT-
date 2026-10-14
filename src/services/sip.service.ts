@@ -689,7 +689,13 @@ export async function createLiveKitInboundTrunk(
 export async function createLiveKitDispatchRule(
   name: string,
   roomPrefix: string,
-  trunkIds?: string[]
+  trunkIds?: string[],
+  options?: {
+    agentName?: string;
+    roomConfig?: any;
+    hidePhoneNumber?: boolean;
+    metadata?: string;
+  }
 ) {
   const livekitKey = process.env.LIVEKIT_API_KEY;
   const livekitSecret = process.env.LIVEKIT_API_SECRET;
@@ -702,6 +708,14 @@ export async function createLiveKitDispatchRule(
   const httpHost = livekitUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://');
   const sipClient = new SipClient(httpHost, livekitKey, livekitSecret);
 
+  const effectiveRoomConfig =
+    options?.roomConfig ||
+    (options?.agentName
+      ? {
+          agents: [{ agentName: options.agentName }],
+        }
+      : undefined);
+
   return sipClient.createSipDispatchRule(
     {
       type: 'individual',
@@ -710,6 +724,9 @@ export async function createLiveKitDispatchRule(
     {
       name,
       trunkIds: trunkIds || [],
+      roomConfig: effectiveRoomConfig,
+      hidePhoneNumber: options?.hidePhoneNumber,
+      metadata: options?.metadata,
     }
   );
 }

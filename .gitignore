@@ -18,6 +18,8 @@ lerna-debug.log*
 # Environment Variables (Keep .env.example committed)
 .env
 .env*.local
+.env.test
+.env*.test
 !.env.example
 
 # Local SQLite Database & Prisma
